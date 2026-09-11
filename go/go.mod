@@ -1,4 +1,4 @@
-module cdnnow_test_golang_14
+module calc-server-go
 
 go 1.27.0
 
