@@ -1,59 +1,59 @@
 # calc-server-go
 
-Go-переписывание тестового сервиса `calculator_server` + `generator`, изначально написанного на Python. Сервер обновляет два счётчика через вызовы внешних библиотек на C и Rust, отдаёт метрики в формате Prometheus.
+A Go rewrite of the `calculator_server` + `generator` test service, originally written in Python. The server updates two counters via calls into external C and Rust libraries, and exposes metrics in Prometheus format.
 
-## Поддержка платформ
+## Platform support
 
-- **Docker** — протестировано, работает; должно быть кросс-платформенным (Mac/Linux/Windows с Docker Desktop), так как сборка всегда идёт внутри Linux-контейнера независимо от хоста. Рекомендуемый способ, если важна гарантированная воспроизводимость.
-- **Локальная сборка без Docker** — протестировано на **macOS**; должно работать на **Linux** нативно (обычный bash-скрипт, обычные `.so`), но это не проверялось на реальной Linux-машине. На **Windows** без WSL, вероятно, не соберётся: `build.sh` — bash-скрипт, а сама модель поиска динамических библиотек (`.dll` вместо `.so`, нет `LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH`) там принципиально другая.
+- **Docker** — tested, works; should be cross-platform (Mac/Linux/Windows with Docker Desktop), since the build always happens inside a Linux container regardless of the host OS. Recommended if reproducibility matters.
+- **Local build without Docker** — tested on **macOS**; should work natively on **Linux** (a plain bash script, ordinary `.so` files), but this hasn't been verified on an actual Linux machine. Probably won't build on **Windows** without WSL: `build.sh` is a bash script, and the dynamic-library lookup model itself is fundamentally different there (`.dll` instead of `.so`, no `LD_LIBRARY_PATH`/`DYLD_LIBRARY_PATH`).
 
-## Быстрый старт через Docker
+## Quick start with Docker
 
-Проще всего запустить сервер (не генератор — это отдельная утилита, не сервис) через Docker: не нужно ставить Go/gcc/Rust локально, сборка полностью изолирована и одинаково воспроизводима на любой ОС хоста (это заодно снимает разницу в именах библиотек `.so`/`.dylib` между Linux и macOS).
+The simplest way to run the server (not the generator — that's a separate utility, not a service) is via Docker: no need to install Go/gcc/Rust locally, the build is fully isolated and reproducible the same way on any host OS (this also sidesteps the `.so`/`.dylib` naming difference between Linux and macOS).
 
 ```bash
 docker build -f build/Dockerfile -t calc-server-go .
 docker run --rm -p 8080:8080 calc-server-go
 ```
 
-Дальше — как обычно: `curl -X POST "http://localhost:8080/calc?num=5"`, `curl http://localhost:8080/metrics`.
+From there, as usual: `curl -X POST "http://localhost:8080/calc?num=5"`, `curl http://localhost:8080/metrics`.
 
-## Требования для локальной сборки (без Docker)
+## Requirements for a local build (without Docker)
 
 - Go 1.25+
-- gcc (или другой C-компилятор)
+- gcc (or another C compiler)
 - Rust toolchain (`cargo`)
 
-## Сборка
+## Build
 
 ```bash
 ./build.sh
 ```
 
-Соберёт по порядку:
-1. `libcalculator.so` — C-библиотека (`c_lib/calculator.c`)
-2. `libcalculator_rust.so` — Rust-библиотека (`rust_lib/`)
-3. `calculator_server` — Go-бинарник сервера
-4. `generator` — Go-бинарник нагрузочного генератора
+Builds, in order:
+1. `libcalculator.so` — the C library (`c_lib/calculator.c`)
+2. `libcalculator_rust.so` — the Rust library (`rust_lib/`)
+3. `calculator_server` — the server Go binary
+4. `generator` — the load generator Go binary
 
-## Структура
+## Structure
 
 ```
-build/Dockerfile             сборка и упаковка calculator_server в контейнер
-c_lib/                       C-библиотека (add)
-rust_lib/                    Rust-библиотека (sub)
+build/Dockerfile             builds and packages calculator_server into a container
+c_lib/                       C library (add)
+rust_lib/                    Rust library (sub)
 go/
-  cmd/calculator_server/     точка входа: HTTP-хендлеры, main()
-  cmd/generator/             точка входа генератора нагрузки
-  internal/calculator/       единственный пакет, использующий cgo —
-                              обёртка над add()/sub() и сами счётчики sum/sub
-  internal/metrics/          скользящее RPS-окно (без cgo-зависимости,
-                              тестируется и собирается отдельно от native-кода)
+  cmd/calculator_server/     entry point: HTTP handlers, main()
+  cmd/generator/             load generator entry point
+  internal/calculator/       the only package that touches cgo —
+                              wraps add()/sub() and the sum/sub counters themselves
+  internal/metrics/          RPS sliding window (no cgo dependency,
+                              tested and built independently of the native code)
 ```
 
-## Запуск без Docker
+## Running without Docker
 
-`libcalculator.so`/`libcalculator_rust.so` собираются в корень репозитория, но не встраиваются в бинарник через rpath (эта механика по-разному ведёт себя в macOS/Linux) — при запуске нужно явно указать путь поиска библиотек:
+`libcalculator.so`/`libcalculator_rust.so` are built into the repository root, but are not embedded into the binary via rpath (this mechanism behaves differently on macOS vs Linux) — the library search path must be set explicitly when running:
 
 ```bash
 # Linux
@@ -63,45 +63,45 @@ LD_LIBRARY_PATH=. ./calculator_server --port 8080
 DYLD_LIBRARY_PATH=. ./calculator_server --port 8080
 ```
 
-Флаги: `--host` (по умолчанию `0.0.0.0`), `--port` (по умолчанию `8080`), `--interval` (интервал печати текущих значений `sum`/`sub` в консоль, по умолчанию `5s`).
+Flags: `--host` (default `0.0.0.0`), `--port` (default `8080`), `--interval` (interval for printing the current `sum`/`sub` values to the console, default `5s`).
 
-Генератор нагрузки (в другом терминале):
+Load generator (in another terminal):
 
 ```bash
 ./generator --url http://localhost:8080/calc --threads 10 --interval 100ms
 ```
 
-Флаги: `--url`, `--threads` (число горутин-воркеров, по умолчанию `10`), `--interval` (пауза между запросами на воркер, `0` — без пауз), `--timeout` (таймаут HTTP-запроса).
+Flags: `--url`, `--threads` (number of worker goroutines, default `10`), `--interval` (pause between requests per worker, `0` = as fast as possible), `--timeout` (HTTP request timeout).
 
-## Проверка результата
+## Verifying the result
 
-Одиночный запрос:
+A single request:
 
 ```bash
 curl -X POST "http://localhost:8080/calc?num=5"
 ```
 
-Метрики:
+Metrics:
 
 ```bash
 curl http://localhost:8080/metrics
 ```
 
-В выводе будут:
-- `http_requests_per_second{seconds_ago="0..59"}` — количество запросов `/calc` за каждую из последних 60 секунд
-- `c_call_duration_seconds{quantile="0.95"|"0.99"}` — p95/p99 времени выполнения вызова C-функции `add`
-- `rust_call_duration_seconds{quantile="0.95"|"0.99"}` — p95/p99 времени выполнения вызова Rust-функции `sub`
+The output includes:
+- `http_requests_per_second{seconds_ago="0..59"}` — number of `/calc` requests received during each of the last 60 seconds
+- `c_call_duration_seconds{quantile="0.95"|"0.99"}` — p95/p99 execution time of the C `add` call
+- `rust_call_duration_seconds{quantile="0.95"|"0.99"}` — p95/p99 execution time of the Rust `sub` call
 
-Остановка обоих процессов — `Ctrl+C` (корректно завершаются, сервер и генератор печатают итоговую статистику).
+Stop either process with `Ctrl+C` (both shut down gracefully and print their final totals).
 
-## Тесты
+## Tests
 
 ```bash
 cd go
 LD_LIBRARY_PATH=.. CGO_ENABLED=1 go test -race ./...
 ```
 
-(На macOS — `DYLD_LIBRARY_PATH=..` вместо `LD_LIBRARY_PATH`; библиотеки должны быть уже собраны, `./build.sh` до тестов.)
+(On macOS, use `DYLD_LIBRARY_PATH=..` instead of `LD_LIBRARY_PATH`; the libraries must already be built — run `./build.sh` before testing.)
 
-- `internal/metrics` — не требует собранных C/Rust библиотек вообще, тестирует скользящее RPS-окно, включая конкретный edge case: неравномерный трафик, когда ячейка остаётся неиспользуемой дольше одного полного оборота (60 сек) и не должна "протечь" в отчёт как будто это данные за текущее окно.
-- `internal/calculator` — требует собранных библиотек (тестирует саму cgo-интеграцию). Два теста: корректность конвертации типов через границу C/Go, и конкурентная корректность обновления счётчиков под `-race` (много горутин одновременно, проверка итоговой суммы).
+- `internal/metrics` — needs no C/Rust libraries built at all; tests the RPS sliding window, including a specific edge case: with uneven traffic, a bucket can go unused for longer than one full rotation (60s) and must not "leak" into the report as if it were data for the current window.
+- `internal/calculator` — needs the libraries built (tests the cgo integration itself). Two tests: correctness of type conversion across the C boundary, and concurrent correctness of the counter updates under `-race` (many goroutines at once, checking the final sum).
