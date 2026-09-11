@@ -1,0 +1,9 @@
+# Build artifacts
+*.so
+*.dylib
+rust_lib/target/
+go/cmd/*/calculator_server
+go/cmd/*/generator
+
+# macOS
+.DS_Store
