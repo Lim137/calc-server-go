@@ -11,7 +11,14 @@ echo "  -> libcalculator.so"
 
 echo "== Building Rust library =="
 (cd rust_lib && cargo build --release)
-cp rust_lib/target/release/libcalculator_rust.so .
+# cargo names the cdylib output per the host OS convention (.so on
+# Linux, .dylib on macOS) -- normalize to .so either way, since that's
+# what the Go build/link step (and the target Linux environment) expect.
+RUST_LIB_SRC="rust_lib/target/release/libcalculator_rust.so"
+if [ ! -f "$RUST_LIB_SRC" ]; then
+	RUST_LIB_SRC="rust_lib/target/release/libcalculator_rust.dylib"
+fi
+cp "$RUST_LIB_SRC" libcalculator_rust.so
 echo "  -> libcalculator_rust.so"
 
 echo "== Building Go binaries =="
