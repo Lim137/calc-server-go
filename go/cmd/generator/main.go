@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
 
@@ -127,10 +128,10 @@ func main() {
 	fmt.Printf("Generator started: %d threads -> %s\n", *threads, *baseURL)
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
-	<-sigCh
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
+	sig := <-sigCh
 
-	fmt.Println("\nSIGINT received, stopping generator...")
+	fmt.Printf("\n%s received, stopping generator...\n", sig)
 	close(stop)
 	wg.Wait()
 

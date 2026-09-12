@@ -98,8 +98,17 @@ func TestHandler_RecordsRPSForInvalidRequestsToo(t *testing.T) {
 	wrongMethod := httptest.NewRequest(http.MethodGet, "/calc?num=1", nil)
 	h(httptest.NewRecorder(), wrongMethod)
 
+	// Sum across the whole window rather than asserting snap[0] == 3:
+	// the three requests above and this Snapshot() call are not
+	// guaranteed to land in the same calendar second, so a fixed-index
+	// check is flaky right at a second boundary. What this test cares
+	// about is that all three got recorded somewhere, not which slot.
 	snap := rps.Snapshot()
-	if snap[0] != 3 {
-		t.Errorf("rps[0] = %d, want 3 (all three requests counted, including the two invalid ones)", snap[0])
+	var total int64
+	for _, v := range snap {
+		total += v
+	}
+	if total != 3 {
+		t.Errorf("sum of rps window = %d, want 3 (all three requests counted, including the two invalid ones)", total)
 	}
 }
