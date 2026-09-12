@@ -94,6 +94,11 @@ func main() {
 	interval := flag.Duration("interval", 5*time.Second, "interval between periodic sum/sub reports")
 	flag.Parse()
 
+	if *interval <= 0 {
+		fmt.Fprintln(os.Stderr, "--interval must be positive (time.NewTicker panics otherwise)")
+		os.Exit(1)
+	}
+
 	calc := calculator.New()
 	rps := metrics.NewRPSWindow()
 
@@ -109,10 +114,11 @@ func main() {
 		Handler: mux,
 	}
 
-	// stop is closed only after Shutdown has finished draining active
-	// requests, so the printer's final sum/sub snapshot reflects every
-	// request the server actually served — not whatever happened to be
-	// applied at the moment the signal arrived.
+	// stop is closed only after Shutdown returns, so the printer's final
+	// sum/sub snapshot reflects every request that finished by then. If
+	// Shutdown hits its timeout instead of draining cleanly, in-flight
+	// handlers may still be running when that snapshot is taken — the
+	// log line below says which case happened.
 	stop := make(chan struct{})
 	printerDone := make(chan struct{})
 	go func() {
@@ -142,7 +148,10 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		if err := server.Shutdown(ctx); err != nil {
-			fmt.Fprintln(os.Stderr, "shutdown error:", err)
+			fmt.Fprintf(os.Stderr, "shutdown timed out after 5s (%v) — forcing close, some requests may not have finished\n", err)
+			_ = server.Close()
+		} else {
+			fmt.Println("shutdown complete, all in-flight requests finished")
 		}
 		<-serveErr // wait for ListenAndServe to actually return
 	}

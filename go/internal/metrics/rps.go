@@ -61,8 +61,13 @@ func (w *RPSWindow) Record() {
 // rotation) correctly reads 0.
 func (w *RPSWindow) Snapshot() [60]int64 {
 	now := w.now().Unix()
-	var out [60]int64
 
+	w.mu.Lock()
+	buckets := w.buckets
+	seconds := w.seconds
+	w.mu.Unlock()
+
+	var out [60]int64
 	for offset := int64(0); offset < 60; offset++ {
 		targetSecond := now - offset
 		idx := targetSecond % 60
@@ -70,11 +75,9 @@ func (w *RPSWindow) Snapshot() [60]int64 {
 			idx += 60
 		}
 
-		w.mu.Lock()
-		if w.seconds[idx] == targetSecond {
-			out[offset] = w.buckets[idx]
+		if seconds[idx] == targetSecond {
+			out[offset] = buckets[idx]
 		}
-		w.mu.Unlock()
 	}
 	return out
 }

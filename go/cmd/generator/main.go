@@ -79,15 +79,30 @@ func main() {
 	timeout := flag.Duration("timeout", 5*time.Second, "HTTP request timeout")
 	flag.Parse()
 
+	if *threads <= 0 {
+		fmt.Fprintln(os.Stderr, "--threads must be positive")
+		os.Exit(1)
+	}
+	if *timeout <= 0 {
+		fmt.Fprintln(os.Stderr, "--timeout must be positive (a non-positive value would make every request context already expired)")
+		os.Exit(1)
+	}
+	if *interval < 0 {
+		fmt.Fprintln(os.Stderr, "--interval must not be negative (use 0 for no pause)")
+		os.Exit(1)
+	}
+
 	stop := make(chan struct{})
 	var okCount, errCount int64
 
-	// The default transport caps idle connections per host at 2, which
-	// would force most workers to open a fresh TCP connection on every
-	// request regardless of the body-draining fix above. Size it to the
-	// worker count so steady-state traffic can actually reuse connections.
+	// The default transport caps idle connections per host at 2, and the
+	// overall pool at 100, which under real traffic patterns tends to
+	// force extra TCP connections regardless of the body-draining fix
+	// above. Size both caps to the worker count so up to all of them can
+	// keep a connection alive between requests.
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.MaxIdleConnsPerHost = *threads
+	transport.MaxIdleConns = *threads
 	client := &http.Client{Transport: transport}
 
 	var wg sync.WaitGroup
