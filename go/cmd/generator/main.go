@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -47,6 +48,17 @@ func worker(id int, baseURL string, stop <-chan struct{}, interval, timeout time
 				return
 			}
 			defer resp.Body.Close()
+
+			// Drain to EOF (not just Close) so the underlying
+			// connection is eligible for keep-alive reuse instead of
+			// being torn down on every request.
+			_, readErr := io.Copy(io.Discard, resp.Body)
+
+			if resp.StatusCode != http.StatusOK || readErr != nil {
+				atomic.AddInt64(errCount, 1)
+				fmt.Printf("[worker %d] unexpected response: status=%d body_err=%v\n", id, resp.StatusCode, readErr)
+				return
+			}
 			atomic.AddInt64(okCount, 1)
 		}()
 
@@ -70,7 +82,13 @@ func main() {
 	stop := make(chan struct{})
 	var okCount, errCount int64
 
-	client := &http.Client{}
+	// The default transport caps idle connections per host at 2, which
+	// would force most workers to open a fresh TCP connection on every
+	// request regardless of the body-draining fix above. Size it to the
+	// worker count so steady-state traffic can actually reuse connections.
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConnsPerHost = *threads
+	client := &http.Client{Transport: transport}
 
 	var wg sync.WaitGroup
 	for i := 0; i < *threads; i++ {
