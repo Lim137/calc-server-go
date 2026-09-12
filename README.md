@@ -98,10 +98,12 @@ Stop either process with `Ctrl+C` (both shut down gracefully and print their fin
 
 ```bash
 cd go
-LD_LIBRARY_PATH=.. CGO_ENABLED=1 go test -race ./...
+LD_LIBRARY_PATH="$(cd .. && pwd)" CGO_ENABLED=1 go test -race ./...
 ```
 
-(On macOS, use `DYLD_LIBRARY_PATH=..` instead of `LD_LIBRARY_PATH`; the libraries must already be built — run `./build.sh` before testing.)
+Use an **absolute** path here, not `..` — `go test` runs each package's test binary with that package's own source directory as its working directory (not the directory `go test` was invoked from), so a relative `..` resolves to a different, wrong directory for `internal/calculator`.
+
+(On macOS, use `DYLD_LIBRARY_PATH` instead of `LD_LIBRARY_PATH`, same absolute-path rule; the libraries must already be built — run `./build.sh` before testing. macOS System Integrity Protection strips `DYLD_LIBRARY_PATH` from `go test`'s spawned test binaries even when it's set correctly — if you still hit `Library not loaded`, build and run the test binary directly instead: `go test -c ./internal/calculator && DYLD_LIBRARY_PATH="$(cd .. && pwd)" ./calculator.test`.)
 
 - `internal/metrics` — needs no C/Rust libraries built at all; tests the RPS sliding window, including a specific edge case: with uneven traffic, a bucket can go unused for longer than one full rotation (60s) and must not "leak" into the report as if it were data for the current window.
 - `internal/calculator` — needs the libraries built (tests the cgo integration itself). Two tests: correctness of type conversion across the C boundary, and concurrent correctness of the counter updates under `-race` (many goroutines at once, checking the final sum).

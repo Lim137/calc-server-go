@@ -28,6 +28,7 @@ echo "  -> calculator_server"
 echo "  -> generator"
 
 echo "Build complete."
-echo "Run: ./calculator_server [--port 8080]"
+echo "Run (Linux):  LD_LIBRARY_PATH=. ./calculator_server [--port 8080]"
+echo "Run (macOS):  DYLD_LIBRARY_PATH=. ./calculator_server [--port 8080]"
 echo "Then: ./generator [--url http://localhost:8080/calc]"
 echo "Metrics: curl http://localhost:8080/metrics"
