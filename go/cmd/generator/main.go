@@ -16,6 +16,36 @@ import (
 	"time"
 )
 
+// doOneRequest performs a single POST to reqURL and reports the
+// outcome: a network-level failure, a non-200 status, and a body that
+// can't be read to EOF are all treated as failures, distinctly from
+// each other only in the returned error text.
+func doOneRequest(ctx context.Context, reqURL string, client *http.Client) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
+	if err != nil {
+		return fmt.Errorf("request build failed: %w", err)
+	}
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Drain to EOF (not just Close) so the underlying connection is
+	// eligible for keep-alive reuse instead of being torn down on
+	// every request.
+	_, readErr := io.Copy(io.Discard, resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	if readErr != nil {
+		return fmt.Errorf("body read failed: %w", readErr)
+	}
+	return nil
+}
+
 func worker(id int, baseURL string, stop <-chan struct{}, interval, timeout time.Duration, okCount, errCount *int64, client *http.Client) {
 	for {
 		select {
@@ -34,29 +64,9 @@ func worker(id int, baseURL string, stop <-chan struct{}, interval, timeout time
 			ctx, cancel := context.WithTimeout(context.Background(), timeout)
 			defer cancel()
 
-			req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqURL, nil)
-			if err != nil {
+			if err := doOneRequest(ctx, reqURL, client); err != nil {
 				atomic.AddInt64(errCount, 1)
-				fmt.Printf("[worker %d] request build failed: %v\n", id, err)
-				return
-			}
-
-			resp, err := client.Do(req)
-			if err != nil {
-				atomic.AddInt64(errCount, 1)
-				fmt.Printf("[worker %d] request failed: %v\n", id, err)
-				return
-			}
-			defer resp.Body.Close()
-
-			// Drain to EOF (not just Close) so the underlying
-			// connection is eligible for keep-alive reuse instead of
-			// being torn down on every request.
-			_, readErr := io.Copy(io.Discard, resp.Body)
-
-			if resp.StatusCode != http.StatusOK || readErr != nil {
-				atomic.AddInt64(errCount, 1)
-				fmt.Printf("[worker %d] unexpected response: status=%d body_err=%v\n", id, resp.StatusCode, readErr)
+				fmt.Printf("[worker %d] %v\n", id, err)
 				return
 			}
 			atomic.AddInt64(okCount, 1)
