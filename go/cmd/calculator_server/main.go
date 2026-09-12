@@ -8,7 +8,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
-	"sync"
+	"syscall"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -34,6 +34,11 @@ var (
 
 func newHandler(calc *calculator.Calculator, rps *metrics.RPSWindow) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		// Every request that reaches this handler was routed here as
+		// "/calc" by the mux, so this counts all /calc traffic,
+		// including requests that fail validation below.
+		rps.Record()
+
 		if r.URL.Path != "/calc" {
 			http.Error(w, "not found", http.StatusNotFound)
 			return
@@ -55,24 +60,9 @@ func newHandler(calc *calculator.Calculator, rps *metrics.RPSWindow) http.Handle
 			return
 		}
 
-		rps.Record()
-
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		go func() {
-			defer wg.Done()
-			_, elapsed := calc.Add(num)
-			cCallLatency.Observe(elapsed.Seconds())
-		}()
-
-		go func() {
-			defer wg.Done()
-			_, elapsed := calc.Sub(num)
-			rustCallLatency.Observe(elapsed.Seconds())
-		}()
-
-		wg.Wait()
+		_, _, addElapsed, subElapsed := calc.Apply(num)
+		cCallLatency.Observe(addElapsed.Seconds())
+		rustCallLatency.Observe(subElapsed.Seconds())
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
@@ -119,24 +109,44 @@ func main() {
 		Handler: mux,
 	}
 
+	// stop is closed only after Shutdown has finished draining active
+	// requests, so the printer's final sum/sub snapshot reflects every
+	// request the server actually served — not whatever happened to be
+	// applied at the moment the signal arrived.
 	stop := make(chan struct{})
-	go periodicPrinter(calc, stop, *interval)
+	printerDone := make(chan struct{})
+	go func() {
+		periodicPrinter(calc, stop, *interval)
+		close(printerDone)
+	}()
 
 	sigCh := make(chan os.Signal, 1)
-	signal.Notify(sigCh, os.Interrupt)
-	go func() {
-		<-sigCh
-		fmt.Println("\nSIGINT received, shutting down...")
-		close(stop)
+	signal.Notify(sigCh, os.Interrupt, syscall.SIGTERM)
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		_ = server.Shutdown(ctx)
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- server.ListenAndServe()
 	}()
 
 	fmt.Printf("Calculator server listening on %s:%d\n", *host, *port)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
+
+	select {
+	case err := <-serveErr:
+		if err != nil && err != http.ErrServerClosed {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case sig := <-sigCh:
+		fmt.Printf("\n%s received, shutting down...\n", sig)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := server.Shutdown(ctx); err != nil {
+			fmt.Fprintln(os.Stderr, "shutdown error:", err)
+		}
+		<-serveErr // wait for ListenAndServe to actually return
 	}
+
+	close(stop)
+	<-printerDone // wait for the final sum/sub line to actually print
 }

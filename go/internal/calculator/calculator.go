@@ -18,56 +18,44 @@ import (
 	"time"
 )
 
-// Calculator holds the running sum/sub totals. sum and sub each have
-// their own lock so an Add and a Sub — whether from different callers
-// or the two halves of one logical request — never block each other;
-// only genuine contention on the *same* value serializes.
+// Calculator holds the running sum/sub totals, guarded by a single
+// lock. Both totals are updated together in Apply so a concurrent
+// Snapshot always sees a pair that belongs to the same set of applied
+// requests, never sum reflecting one more request than sub.
 type Calculator struct {
-	addMu sync.Mutex
-	sum   int64
-
-	subMu sync.Mutex
-	sub   int64
+	mu  sync.Mutex
+	sum int64
+	sub int64
 }
 
 func New() *Calculator {
 	return &Calculator{}
 }
 
-// Add calls the C add() function with the current running sum and num,
-// stores and returns the new sum. elapsed measures only the C call
-// itself, not time spent waiting for the lock.
-func (c *Calculator) Add(num int64) (result int64, elapsed time.Duration) {
-	c.addMu.Lock()
+// Apply calls both the C add() function and the Rust sub() function
+// with num, atomically updating sum and sub together, and returns the
+// new totals plus how long each native call itself took (lock wait is
+// excluded — each timer starts only after the lock is already held).
+func (c *Calculator) Apply(num int64) (sum, sub int64, addElapsed, subElapsed time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
 	start := time.Now()
 	c.sum = callAdd(c.sum, num)
-	elapsed = time.Since(start)
-	result = c.sum
-	c.addMu.Unlock()
-	return
-}
+	addElapsed = time.Since(start)
 
-// Sub calls the Rust sub() function analogously to Add.
-func (c *Calculator) Sub(num int64) (result int64, elapsed time.Duration) {
-	c.subMu.Lock()
-	start := time.Now()
+	start = time.Now()
 	c.sub = callSub(c.sub, num)
-	elapsed = time.Since(start)
-	result = c.sub
-	c.subMu.Unlock()
-	return
+	subElapsed = time.Since(start)
+
+	return c.sum, c.sub, addElapsed, subElapsed
 }
 
-// Snapshot returns the current sum and sub totals.
+// Snapshot returns the current sum and sub totals as a consistent pair.
 func (c *Calculator) Snapshot() (sum, sub int64) {
-	c.addMu.Lock()
-	sum = c.sum
-	c.addMu.Unlock()
-
-	c.subMu.Lock()
-	sub = c.sub
-	c.subMu.Unlock()
-	return
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sum, c.sub
 }
 
 func callAdd(a, b int64) int64 {

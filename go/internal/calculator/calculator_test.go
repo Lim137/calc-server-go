@@ -13,26 +13,25 @@ import (
 func TestCalculator_ArithmeticIsCorrect(t *testing.T) {
 	c := New()
 
-	if got, _ := c.Add(5); got != 5 {
-		t.Errorf("Add(5) = %d, want 5", got)
+	if sum, _, _, _ := c.Apply(5); sum != 5 {
+		t.Errorf("Apply(5) sum = %d, want 5", sum)
 	}
-	if got, _ := c.Add(3); got != 8 {
-		t.Errorf("Add(3) after Add(5) = %d, want 8", got)
+	if sum, _, _, _ := c.Apply(3); sum != 8 {
+		t.Errorf("Apply(3) after Apply(5) sum = %d, want 8", sum)
 	}
 
-	if got, _ := c.Sub(5); got != -5 {
-		t.Errorf("Sub(5) = %d, want -5", got)
-	}
-	if got, _ := c.Sub(3); got != -8 {
-		t.Errorf("Sub(3) after Sub(5) = %d, want -8", got)
+	_, sub, _, _ := c.Apply(0)
+	if sub != -8 {
+		t.Errorf("sub after Apply(5), Apply(3), Apply(0) = %d, want -8", sub)
 	}
 }
 
-// TestCalculator_ConcurrentAddIsRaceFree fires many goroutines at Add
-// concurrently and checks the final sum is mathematically exact. Run
-// with -race: this is what actually proves the per-value locking is
-// correct, not just "looks right on inspection".
-func TestCalculator_ConcurrentAddIsRaceFree(t *testing.T) {
+// TestCalculator_ConcurrentApplyIsRaceFree fires many goroutines at
+// Apply concurrently and checks the final sum/sub are mathematically
+// exact and consistent with each other. Run with -race: this is what
+// actually proves the locking is correct, not just "looks right on
+// inspection".
+func TestCalculator_ConcurrentApplyIsRaceFree(t *testing.T) {
 	c := New()
 
 	const goroutines = 50
@@ -44,15 +43,18 @@ func TestCalculator_ConcurrentAddIsRaceFree(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < perGoroutine; i++ {
-				c.Add(1)
+				c.Apply(1)
 			}
 		}()
 	}
 	wg.Wait()
 
-	sum, _ := c.Snapshot()
+	sum, sub := c.Snapshot()
 	want := int64(goroutines * perGoroutine)
 	if sum != want {
 		t.Errorf("final sum = %d, want %d (lost updates under concurrency)", sum, want)
+	}
+	if sub != -want {
+		t.Errorf("final sub = %d, want %d (lost updates under concurrency)", sub, -want)
 	}
 }
