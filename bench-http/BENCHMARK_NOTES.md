@@ -54,27 +54,41 @@ not the macOS/Go 1.27 environment of experiment 1), each running
 `calculator_server` with one of the two `calculator.go` variants in
 `bench-http/calculator_sequential.go` / `bench-http/calculator_fanout.go`,
 load-tested with [`hey`](https://github.com/rakyll/hey) at 50
-concurrent connections for 15s per run, alternating order across
-multiple rounds to rule out warm-up/ordering effects.
+concurrent connections for 15s per run, across 4 rounds that alternate
+*which variant goes first* (round 1: Sequential then Fanout; round 2:
+Fanout then Sequential; and so on) specifically to rule out an
+ordering/warm-up artifact rather than a real difference between the
+two implementations.
 
 Reproduce with `./bench-http/run_http_comparison.sh` (needs Docker and
-`hey`; raw output for the run these notes describe is in
-`bench-http/results/`).
+`hey`; it refuses to run if `calculator.go` has uncommitted changes,
+since it overwrites that file and restores it via `git checkout --`,
+which would otherwise silently discard anything not already
+committed). Raw output for the run these notes describe is in
+`bench-http/results/`.
 
-Result: **reversed**. `Sequential` consistently outperformed `Fanout`:
+Result: **reversed**, and the direction holds regardless of which
+variant ran first in a given round:
 
-| | Sequential | Fanout |
-|---|---|---|
-| RPS (3 rounds) | ~15,185 – 15,266 | ~13,880 – 13,961 |
-| p50 | 3.1 ms | 3.5 ms |
-| p95 | 4.3 ms | 4.2 ms |
-| p99 | 5.0 ms | 5.2 ms |
+| Round | Order | Sequential RPS | Fanout RPS |
+|---|---|---|---|
+| 1 | Sequential first | 14,188 | 13,157 |
+| 2 | Fanout first | 14,475 | 12,292 |
+| 3 | Sequential first | 11,982 | 10,642 |
+| 4 | Fanout first | 12,511 | 12,145 |
+
+`Sequential` won all four rounds. Absolute numbers vary run-to-run
+(background load on the test machine, Docker/VM scheduling), but the
+direction is stable: `Sequential` p50/p95/p99 were also consistently
+at or below `Fanout`'s in every round (e.g. round 1: 3.3/4.7/6.1ms vs
+3.6/4.9/6.6ms; round 2: 3.3/4.6/5.9ms vs 3.7/6.1/8.3ms).
 
 This result was independently reproduced twice more (by a different
 reviewer, on separate Docker runs with different warm-up/round
-counts): `Fanout` was consistently slower by roughly 7–13% depending on
-the exact run, never faster. The magnitude varies with run conditions;
-the direction does not.
+counts and, in one case, genuinely alternating pair order): `Fanout`
+was consistently slower by roughly 7–13% depending on the exact run,
+never faster. The magnitude varies with run conditions; the direction
+does not.
 
 ## Conclusion
 

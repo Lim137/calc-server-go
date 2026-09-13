@@ -23,6 +23,19 @@ FAN_PORT=18091
 
 mkdir -p "$RESULTS_DIR"
 
+# This script overwrites calculator.go and restores it via `git
+# checkout --` when done. That restore only knows about the last
+# *committed* version -- if calculator.go already had uncommitted
+# changes before this script ran, they would be silently lost with no
+# way to recover them. Refuse to run rather than risk that.
+if [ -n "$(git -C "$REPO_ROOT" status --porcelain -- "$CALC_GO")" ]; then
+	echo "error: $CALC_GO has uncommitted changes." >&2
+	echo "Commit, stash, or discard them first -- this script overwrites" >&2
+	echo "the file and restores it via 'git checkout --', which would" >&2
+	echo "silently discard anything not already committed." >&2
+	exit 1
+fi
+
 cleanup() {
 	git -C "$REPO_ROOT" checkout -- "$CALC_GO" 2>/dev/null || true
 	docker rm -f bench-http-seq bench-http-fanout >/dev/null 2>&1 || true
@@ -56,12 +69,17 @@ build_image sequential calc-http-bench-sequential
 build_image fanout calc-http-bench-fanout
 git checkout -- "$CALC_GO"
 
-echo "== Running $ROUNDS alternating rounds (Sequential, then Fanout each round) =="
+echo "== Running $ROUNDS rounds, alternating which variant goes first =="
 for i in $(seq 1 "$ROUNDS"); do
-	echo "--- Round $i: Sequential ---"
-	run_load sequential calc-http-bench-sequential "$SEQ_PORT" "round${i}-sequential"
-	echo "--- Round $i: Fanout ---"
-	run_load fanout calc-http-bench-fanout "$FAN_PORT" "round${i}-fanout"
+	if [ $((i % 2)) -eq 1 ]; then
+		echo "--- Round $i: Sequential, then Fanout ---"
+		run_load sequential calc-http-bench-sequential "$SEQ_PORT" "round${i}-sequential"
+		run_load fanout calc-http-bench-fanout "$FAN_PORT" "round${i}-fanout"
+	else
+		echo "--- Round $i: Fanout, then Sequential ---"
+		run_load fanout calc-http-bench-fanout "$FAN_PORT" "round${i}-fanout"
+		run_load sequential calc-http-bench-sequential "$SEQ_PORT" "round${i}-sequential"
+	fi
 done
 
 echo "== Summary (RPS from each run) =="

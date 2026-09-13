@@ -1,24 +1,24 @@
 # HELP c_call_duration_seconds Execution time of the C add() call.
 # TYPE c_call_duration_seconds summary
-c_call_duration_seconds{quantile="0.95"} 8.6792e-05
-c_call_duration_seconds{quantile="0.99"} 0.000119041
-c_call_duration_seconds_sum 12.616266683996372
-c_call_duration_seconds_count 209458
+c_call_duration_seconds{quantile="0.95"} 0.000111625
+c_call_duration_seconds{quantile="0.99"} 0.000167167
+c_call_duration_seconds_sum 12.242999282996482
+c_call_duration_seconds_count 184419
 # HELP http_requests_per_second Number of /calc requests received during a given second within the last 60 seconds.
 # TYPE http_requests_per_second gauge
-http_requests_per_second{seconds_ago="0"} 6034
-http_requests_per_second{seconds_ago="1"} 14182
-http_requests_per_second{seconds_ago="10"} 13998
-http_requests_per_second{seconds_ago="11"} 13985
-http_requests_per_second{seconds_ago="12"} 14087
-http_requests_per_second{seconds_ago="13"} 14096
-http_requests_per_second{seconds_ago="14"} 14053
-http_requests_per_second{seconds_ago="15"} 7904
+http_requests_per_second{seconds_ago="0"} 4313
+http_requests_per_second{seconds_ago="1"} 13987
+http_requests_per_second{seconds_ago="10"} 11963
+http_requests_per_second{seconds_ago="11"} 12780
+http_requests_per_second{seconds_ago="12"} 11654
+http_requests_per_second{seconds_ago="13"} 8445
+http_requests_per_second{seconds_ago="14"} 10420
+http_requests_per_second{seconds_ago="15"} 9104
 http_requests_per_second{seconds_ago="16"} 0
 http_requests_per_second{seconds_ago="17"} 0
 http_requests_per_second{seconds_ago="18"} 0
 http_requests_per_second{seconds_ago="19"} 0
-http_requests_per_second{seconds_ago="2"} 13999
+http_requests_per_second{seconds_ago="2"} 14131
 http_requests_per_second{seconds_ago="20"} 0
 http_requests_per_second{seconds_ago="21"} 0
 http_requests_per_second{seconds_ago="22"} 0
@@ -29,7 +29,7 @@ http_requests_per_second{seconds_ago="26"} 0
 http_requests_per_second{seconds_ago="27"} 0
 http_requests_per_second{seconds_ago="28"} 0
 http_requests_per_second{seconds_ago="29"} 0
-http_requests_per_second{seconds_ago="3"} 14130
+http_requests_per_second{seconds_ago="3"} 13681
 http_requests_per_second{seconds_ago="30"} 0
 http_requests_per_second{seconds_ago="31"} 0
 http_requests_per_second{seconds_ago="32"} 0
@@ -40,7 +40,7 @@ http_requests_per_second{seconds_ago="36"} 0
 http_requests_per_second{seconds_ago="37"} 0
 http_requests_per_second{seconds_ago="38"} 0
 http_requests_per_second{seconds_ago="39"} 0
-http_requests_per_second{seconds_ago="4"} 14260
+http_requests_per_second{seconds_ago="4"} 13815
 http_requests_per_second{seconds_ago="40"} 0
 http_requests_per_second{seconds_ago="41"} 0
 http_requests_per_second{seconds_ago="42"} 0
@@ -51,7 +51,7 @@ http_requests_per_second{seconds_ago="46"} 0
 http_requests_per_second{seconds_ago="47"} 0
 http_requests_per_second{seconds_ago="48"} 0
 http_requests_per_second{seconds_ago="49"} 0
-http_requests_per_second{seconds_ago="5"} 13690
+http_requests_per_second{seconds_ago="5"} 13895
 http_requests_per_second{seconds_ago="50"} 0
 http_requests_per_second{seconds_ago="51"} 0
 http_requests_per_second{seconds_ago="52"} 0
@@ -62,13 +62,13 @@ http_requests_per_second{seconds_ago="56"} 0
 http_requests_per_second{seconds_ago="57"} 0
 http_requests_per_second{seconds_ago="58"} 0
 http_requests_per_second{seconds_ago="59"} 0
-http_requests_per_second{seconds_ago="6"} 13906
-http_requests_per_second{seconds_ago="7"} 13299
-http_requests_per_second{seconds_ago="8"} 13825
-http_requests_per_second{seconds_ago="9"} 14010
+http_requests_per_second{seconds_ago="6"} 12907
+http_requests_per_second{seconds_ago="7"} 12464
+http_requests_per_second{seconds_ago="8"} 10711
+http_requests_per_second{seconds_ago="9"} 10149
 # HELP rust_call_duration_seconds Execution time of the Rust sub() call.
 # TYPE rust_call_duration_seconds summary
-rust_call_duration_seconds{quantile="0.95"} 1.67e-07
-rust_call_duration_seconds{quantile="0.99"} 5e-07
-rust_call_duration_seconds_sum 0.021368058999994007
-rust_call_duration_seconds_count 209458
+rust_call_duration_seconds{quantile="0.95"} 3.33e-07
+rust_call_duration_seconds{quantile="0.99"} 6.25e-07
+rust_call_duration_seconds_sum 0.027657195000023827
+rust_call_duration_seconds_count 184419
