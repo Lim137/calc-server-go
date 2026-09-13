@@ -31,15 +31,24 @@ both operations, since its busy-loop is protected by `volatile` in the
 original C source and so is guaranteed not to be optimized away).
 
 Result: on the **real libraries**, `Fanout` was ~20% faster than both
-`Sequential` and `SplitMutexGoroutines` (`benchstat`, p=0.000, n=8),
-which performed identically to each other. On the **synthetic
-both-expensive** scenario, `SplitMutexGoroutines` won instead, by
-letting different concurrent requests' `add`/`sub` overlap with each
-other — something `Fanout`'s single call-wide lock can't do. A fourth
-diagnostic variant (same outer lock as `Fanout`, but sequential inside
-a single spawned goroutine) confirmed the `Fanout` speedup really was
-from running the two calls in parallel, not some side effect of
-spawning a goroutine per se.
+`Sequential` and `SplitMutexGoroutines`, which performed identically to
+each other (own run, `-count=10`, `-cpu=1,4,8`, real libraries). An
+independent replication (different reviewer, longer `-benchtime=1s`,
+5+3=8 combined repeats, `GOMAXPROCS=4`, comparing specifically
+`Sequential` vs `Fanout` — not `SplitMutexGoroutines`) confirmed the gap
+statistically: `benchstat`, p=0.000, n=8, -19.82% ns/op. On the
+**synthetic both-expensive** scenario, `SplitMutexGoroutines` won
+instead, by letting different concurrent requests' `add`/`sub` overlap
+with each other — something `Fanout`'s single call-wide lock can't do.
+
+A fourth diagnostic variant (same outer lock as `Fanout`, but sequential
+inside a single spawned goroutine) showed the same speed as `Sequential`
+and `SplitMutexGoroutines`, not `Fanout` — consistent with the `Fanout`
+speedup coming from running the two calls in parallel rather than some
+side effect of spawning a goroutine per se. This wasn't a fully clean
+control, though: the diagnostic variant waits via a channel instead of
+`sync.WaitGroup` (same synchronization *idea*, different primitive), so
+it doesn't isolate parallelism as the only changed variable.
 
 **The exact mechanism behind the ~20% real-library speedup was not
 established.** It's consistent with avoiding scheduler/mutex-contention
@@ -60,12 +69,14 @@ Fanout then Sequential; and so on) specifically to rule out an
 ordering/warm-up artifact rather than a real difference between the
 two implementations.
 
-Reproduce with `./bench-http/run_http_comparison.sh` (needs Docker and
-`hey`; it refuses to run if `calculator.go` has uncommitted changes,
-since it overwrites that file and restores it via `git checkout --`,
-which would otherwise silently discard anything not already
-committed). Raw output for the run these notes describe is in
-`bench-http/results/`.
+Reproduce with `ROUNDS=4 ./bench-http/run_http_comparison.sh` (needs
+Docker and `hey`; it refuses to run if `calculator.go` has uncommitted
+changes, since it overwrites that file and restores it via `git
+checkout --`, which would otherwise silently discard anything not
+already committed). Each invocation writes into its own timestamped
+subdirectory under `bench-http/results/`, so re-running never
+overwrites a previous run. Raw output for the run these notes describe
+is in `bench-http/results/2026-09-13-alternating-4-rounds/`.
 
 Result: **reversed**, and the direction holds regardless of which
 variant ran first in a given round:
@@ -77,11 +88,24 @@ variant ran first in a given round:
 | 3 | Sequential first | 11,982 | 10,642 |
 | 4 | Fanout first | 12,511 | 12,145 |
 
-`Sequential` won all four rounds. Absolute numbers vary run-to-run
-(background load on the test machine, Docker/VM scheduling), but the
-direction is stable: `Sequential` p50/p95/p99 were also consistently
-at or below `Fanout`'s in every round (e.g. round 1: 3.3/4.7/6.1ms vs
-3.6/4.9/6.6ms; round 2: 3.3/4.6/5.9ms vs 3.7/6.1/8.3ms).
+`Sequential` won RPS in all four rounds. Absolute numbers vary
+run-to-run (background load on the test machine, Docker/VM
+scheduling). `Sequential`'s p50 was also at or below `Fanout`'s in
+every round, but the tail (p95/p99) advantage was **not** consistent —
+`Fanout` actually had a lower p99 in round 3 and lower p95/p99 in round
+4:
+
+| Round | Sequential p50/p95/p99 | Fanout p50/p95/p99 |
+|---|---|---|
+| 1 | 3.3 / 4.7 / 6.1 ms | 3.6 / 4.9 / 6.6 ms |
+| 2 | 3.3 / 4.6 / 5.9 ms | 3.7 / 6.1 / 8.3 ms |
+| 3 | 3.9 / 6.2 / 9.5 ms | 4.5 / 6.5 / **9.2** ms |
+| 4 | 3.8 / **5.7** / **7.5** ms | 3.9 / **5.5** / **7.2** ms |
+
+So the honest claim is narrower than "wins on everything": `Sequential`
+had higher throughput in every round tested, and better median latency
+in every round tested; its tail-latency advantage was real in rounds 1
+and 2 but did not hold in rounds 3 and 4.
 
 This result was independently reproduced twice more (by a different
 reviewer, on separate Docker runs with different warm-up/round

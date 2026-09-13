@@ -3,23 +3,32 @@
 #
 # Builds two Docker images -- one with each calculator_*.go snapshot in
 # this directory swapped into internal/calculator/calculator.go -- then
-# load-tests both with `hey` in alternating order and saves raw output
-# under results/. Requires `hey` (brew install hey) and Docker.
+# load-tests both with `hey` across a few rounds that alternate which
+# variant goes first, saving raw output under results/<run timestamp>/.
+# Requires `hey` (brew install hey) and Docker.
+#
+# Each invocation gets its own timestamped subdirectory, so re-running
+# this never overwrites or mixes with a previous run's saved reports
+# (including the ones already committed from earlier runs).
 #
 # Run from the repository root: ./bench-http/run_http_comparison.sh
+# Override ROUNDS/DURATION/CONCURRENCY as env vars, e.g.:
+#   ROUNDS=4 ./bench-http/run_http_comparison.sh
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CALC_GO="$REPO_ROOT/go/internal/calculator/calculator.go"
-RESULTS_DIR="$SCRIPT_DIR/results"
+RUN_ID="$(date +%Y%m%dT%H%M%S)"
+RESULTS_DIR="$SCRIPT_DIR/results/$RUN_ID"
 
 ROUNDS="${ROUNDS:-3}"
 DURATION="${DURATION:-15s}"
 CONCURRENCY="${CONCURRENCY:-50}"
 SEQ_PORT=18090
 FAN_PORT=18091
+RUN_CONTAINER="bench-http-run-$RUN_ID"
 
 mkdir -p "$RESULTS_DIR"
 
@@ -38,7 +47,10 @@ fi
 
 cleanup() {
 	git -C "$REPO_ROOT" checkout -- "$CALC_GO" 2>/dev/null || true
-	docker rm -f bench-http-seq bench-http-fanout >/dev/null 2>&1 || true
+	# Must match the exact name run_load() gives the container -- an
+	# earlier version of this script cleaned up different, stale names
+	# here, which meant an interrupted run left a real container behind.
+	docker rm -f "$RUN_CONTAINER" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -50,10 +62,10 @@ build_image() {
 }
 
 run_load() {
-	local name=$1 image=$2 port=$3 out=$4
-	docker rm -f "bench-http-run" >/dev/null 2>&1 || true
-	docker run -d --rm -p "${port}:8080" --name bench-http-run "$image" \
-		> "$RESULTS_DIR/${out}.server.txt"
+	local image=$1 port=$2 out=$3
+	docker rm -f "$RUN_CONTAINER" >/dev/null 2>&1 || true
+	docker run -d --rm -p "${port}:8080" --name "$RUN_CONTAINER" "$image" \
+		> "$RESULTS_DIR/${out}.container_id.txt"
 	sleep 1
 	curl -s -X POST "http://localhost:${port}/calc?num=1" -o /dev/null \
 		-w "warmup status: %{http_code}\n" > "$RESULTS_DIR/${out}.warmup.txt"
@@ -61,7 +73,8 @@ run_load() {
 		"http://localhost:${port}/calc?num=5" \
 		> "$RESULTS_DIR/${out}.hey.txt" 2>&1
 	curl -s "http://localhost:${port}/metrics" > "$RESULTS_DIR/${out}.metrics.txt"
-	docker stop bench-http-run > /dev/null
+	docker logs "$RUN_CONTAINER" > "$RESULTS_DIR/${out}.server.log" 2>&1
+	docker stop "$RUN_CONTAINER" > /dev/null
 }
 
 echo "== Building images =="
@@ -73,12 +86,12 @@ echo "== Running $ROUNDS rounds, alternating which variant goes first =="
 for i in $(seq 1 "$ROUNDS"); do
 	if [ $((i % 2)) -eq 1 ]; then
 		echo "--- Round $i: Sequential, then Fanout ---"
-		run_load sequential calc-http-bench-sequential "$SEQ_PORT" "round${i}-sequential"
-		run_load fanout calc-http-bench-fanout "$FAN_PORT" "round${i}-fanout"
+		run_load calc-http-bench-sequential "$SEQ_PORT" "round${i}-sequential"
+		run_load calc-http-bench-fanout "$FAN_PORT" "round${i}-fanout"
 	else
 		echo "--- Round $i: Fanout, then Sequential ---"
-		run_load fanout calc-http-bench-fanout "$FAN_PORT" "round${i}-fanout"
-		run_load sequential calc-http-bench-sequential "$SEQ_PORT" "round${i}-sequential"
+		run_load calc-http-bench-fanout "$FAN_PORT" "round${i}-fanout"
+		run_load calc-http-bench-sequential "$SEQ_PORT" "round${i}-sequential"
 	fi
 done
 
