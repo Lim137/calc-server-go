@@ -23,12 +23,25 @@ Three locking strategies (`go/internal/calculator/bench_variants_test.go`):
 
 ## Experiment 1: isolated microbenchmark
 
-`go test -bench=BenchmarkApply -benchmem -count=10 -cpu=1,4,8` against
-one shared `Calculator` instance per benchmark (`b.RunParallel`), on
-macOS/arm64, Go 1.27, Apple M4 — both against the real C/Rust libraries
-and a synthetic "both calls expensive" scenario (`callAdd` used for
-both operations, since its busy-loop is protected by `volatile` in the
-original C source and so is guaranteed not to be optimized away).
+Run from the repository root (needs the C/Rust libraries built first,
+same as `internal/calculator`'s other tests — see the main README):
+
+```bash
+LD_LIBRARY_PATH="$(pwd)" CGO_ENABLED=1 go test -C go \
+	-bench=BenchmarkApply -benchmem -count=10 -cpu=1,4,8 \
+	./internal/calculator/...
+```
+
+(On macOS, use `DYLD_LIBRARY_PATH` instead; see the main README's Tests
+section for the platform-specific caveats, e.g. `-exec` with a wrapper
+if System Integrity Protection strips the env var.)
+
+Against one shared `Calculator` instance per benchmark (`b.RunParallel`),
+run on macOS/arm64, Go 1.27, Apple M4 — both against the real C/Rust
+libraries and a synthetic "both calls expensive" scenario (`callAdd`
+used for both operations, since its busy-loop is protected by
+`volatile` in the original C source and so is guaranteed not to be
+optimized away).
 
 Result: on the **real libraries**, `Fanout` was ~20% faster than both
 `Sequential` and `SplitMutexGoroutines`, which performed identically to
