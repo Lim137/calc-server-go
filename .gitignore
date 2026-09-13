@@ -4,6 +4,8 @@
 rust_lib/target/
 go/cmd/*/calculator_server
 go/cmd/*/generator
+/calculator_server
+/generator
 
 # macOS
 .DS_Store
